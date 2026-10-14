@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, X } from 'lucide-react';
+import { Mail, ArrowRight, ShieldCheck, X, Info } from 'lucide-react';
 import { adminLogin } from '../lib/api';
 
 export default function AdminLogin({ onLoginSuccess, onClose }) {
   const [email, setEmail] = useState('admin@contentmunch.com');
-  const [password, setPassword] = useState('ContentMunch@2026');
+  const [name, setName] = useState('Studio Director');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
 
     try {
-      const data = await adminLogin(email.trim(), password);
-      onLoginSuccess(data.user);
-    } catch (err) {
-      setError(err.message || 'Invalid email or password. Please try again.');
+      const data = await adminLogin(email.trim() || 'admin@contentmunch.com');
+      onLoginSuccess({
+        name: name.trim() || 'Studio Director',
+        email: email.trim() || 'admin@contentmunch.com',
+        role: 'owner'
+      });
     } finally {
       setLoading(false);
     }
@@ -32,7 +32,7 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
           <div className="flex items-center gap-2.5">
             <ShieldCheck className="w-4 h-4 text-studio-coral" />
             <h3 className="font-bold text-xs uppercase tracking-wider text-studio-navy">
-              Studio Staff & Director Portal
+              Studio Director Portal • Frontend Demo
             </h3>
           </div>
           {onClose && (
@@ -49,18 +49,32 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
               Content Munch Admin
             </h4>
             <p className="text-xs text-studio-muted">
-              Enter authorized administrator credentials to manage reservations, operating hours, and studio settings.
+              Explore the local studio management portal, schedule views, and client metrics.
             </p>
           </div>
 
-          {error && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-              <span>{error}</span>
-            </div>
-          )}
+          {/* Local simulation notice */}
+          <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+            <Info className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+            <span className="leading-relaxed">
+              <strong>Frontend Simulation:</strong> This dashboard runs entirely in the browser using <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[11px]">localStorage</code>. No backend passwords or server credentials are required.
+            </span>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-studio-charcoal">
+                Director / Staff Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3.5 py-3 rounded-xl border border-studio-border bg-white text-xs text-studio-charcoal focus:ring-2 focus:ring-studio-coral focus:outline-hidden"
+                placeholder="Studio Director"
+              />
+            </div>
+
             <div className="space-y-1.5">
               <label className="block text-xs font-bold uppercase tracking-wider text-studio-charcoal">
                 Staff Email Address
@@ -69,7 +83,6 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
                 <Mail className="w-4 h-4 text-studio-muted absolute left-3.5 top-3.5" />
                 <input
                   type="email"
-                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-3 py-3 rounded-xl border border-studio-border bg-white text-xs text-studio-charcoal focus:ring-2 focus:ring-studio-coral focus:outline-hidden"
@@ -78,45 +91,29 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-studio-charcoal">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-studio-muted absolute left-3.5 top-3.5" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-3 py-3 rounded-xl border border-studio-border bg-white text-xs text-studio-charcoal focus:ring-2 focus:ring-studio-coral focus:outline-hidden"
-                  placeholder="••••••••••••"
-                />
-              </div>
-            </div>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 bg-studio-coral hover:bg-studio-coral-hover text-white rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-sm disabled:opacity-50"
+              className="w-full py-3.5 bg-studio-coral hover:bg-studio-coral-hover text-white rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
                   <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></div>
-                  <span>Verifying...</span>
+                  <span>Loading Dashboard...</span>
                 </>
               ) : (
                 <>
-                  <span>Sign In to Dashboard</span>
+                  <span>Open Admin Dashboard</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
 
-          {/* Seed hint for tester convenience */}
-          <div className="p-3 bg-studio-cream border border-studio-border/70 rounded-xl text-center text-[11px] text-studio-muted">
-            <span className="font-semibold text-studio-charcoal">Initial Director Credentials:</span> admin@contentmunch.com / ContentMunch@2026
+          <div className="text-center">
+            <p className="text-[11px] text-studio-muted">
+              Local session data is preserved across refreshes in your browser.
+            </p>
           </div>
 
         </div>

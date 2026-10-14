@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Calendar, CalendarDays, Clock, DollarSign, 
-  Users, BarChart3, LogOut, ExternalLink, ShieldCheck, UserCheck, Menu, X
+  Users, BarChart3, LogOut, ExternalLink, ShieldCheck, UserCheck, Menu, X, RotateCcw, AlertTriangle
 } from 'lucide-react';
-import { adminGetMetrics, setAdminToken } from '../lib/api';
+import { adminGetMetrics, resetLocalDemoData } from '../lib/api';
 import OverviewTab from './tabs/OverviewTab';
 import BookingsTab from './tabs/BookingsTab';
 import CalendarTab from './tabs/CalendarTab';
@@ -17,6 +17,8 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
   const [activeTab, setActiveTab] = useState('overview');
   const [metrics, setMetrics] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   useEffect(() => {
     loadMetrics();
@@ -29,6 +31,14 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
     } catch (err) {
       console.error('Failed to load admin metrics:', err);
     }
+  };
+
+  const handleConfirmReset = async () => {
+    await resetLocalDemoData();
+    setResetModalOpen(false);
+    setResetSuccess(true);
+    await loadMetrics();
+    setTimeout(() => setResetSuccess(false), 3500);
   };
 
   const navItems = [
@@ -68,7 +78,7 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                     isActive
                       ? 'bg-studio-coral text-white shadow-sm'
                       : 'text-white/70 hover:text-white hover:bg-white/5'
@@ -82,7 +92,7 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
           </nav>
         </div>
 
-        {/* Footer / User Profile */}
+        {/* Footer / User Profile & Actions */}
         <div className="p-4 border-t border-white/10 space-y-3">
           <div className="p-3 rounded-xl bg-white/5 flex items-center justify-between">
             <div>
@@ -92,17 +102,27 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
 
+          {/* Reset Demo Data Button */}
+          <button
+            onClick={() => setResetModalOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-[11px] font-semibold transition-colors cursor-pointer border border-white/10"
+            title="Wipe local bookings and restore empty state"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+            <span>Reset Local Data</span>
+          </button>
+
           <div className="flex gap-2">
             <button
               onClick={onExitToPublic}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               <span>Public Site</span>
             </button>
             <button
               onClick={onLogout}
-              className="px-3 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[11px] font-semibold transition-colors"
+              className="px-3 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[11px] font-semibold transition-colors cursor-pointer"
               title="Logout"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -149,19 +169,31 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
               </button>
             );
           })}
-          <div className="pt-3 border-t border-white/10 flex gap-2">
+          <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
             <button
-              onClick={onExitToPublic}
-              className="flex-1 py-2 rounded-lg bg-white/10 text-white text-xs font-semibold"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setResetModalOpen(true);
+              }}
+              className="w-full py-2 rounded-lg bg-white/5 text-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5"
             >
-              Back to Public Site
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Local Demo Data</span>
             </button>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold"
-            >
-              Logout
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onExitToPublic}
+                className="flex-1 py-2 rounded-lg bg-white/10 text-white text-xs font-semibold"
+              >
+                Back to Public Site
+              </button>
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -169,6 +201,27 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
       {/* Main Content Area */}
       <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto space-y-6">
+
+          {/* Simulation & Reset feedback banner */}
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-2.5 flex items-center justify-between text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+              <span><strong>100% Frontend Mode:</strong> Running entirely in this browser. Bookings, customers, and schedules are saved to localStorage.</span>
+            </div>
+            <button
+              onClick={() => setResetModalOpen(true)}
+              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline shrink-0 ml-2 cursor-pointer"
+            >
+              Reset Data
+            </button>
+          </div>
+
+          {resetSuccess && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium animate-in fade-in">
+              Local database restored to clean initial empty state. All test records cleared.
+            </div>
+          )}
+
           {activeTab === 'overview' && (
             <OverviewTab
               metrics={metrics}
@@ -186,6 +239,39 @@ export default function AdminDashboard({ adminUser, onLogout, onExitToPublic }) 
           {activeTab === 'reports' && <ReportsTab />}
         </div>
       </main>
+
+      {/* Confirmation Dialog for Resetting Local Data */}
+      {resetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-studio-navy/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-studio-border rounded-3xl p-6 w-full max-w-md space-y-4 shadow-floating">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <h4 className="font-editorial text-xl font-bold text-studio-navy">
+              Reset Local Storage Data?
+            </h4>
+            <p className="text-xs text-studio-muted leading-relaxed">
+              This will wipe all locally created bookings, custom staff members, and blocked dates from your browser's localStorage, returning the studio to its clean, initial empty state.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setResetModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-studio-border text-xs font-semibold hover:bg-studio-cream cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReset}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Yes, Reset All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

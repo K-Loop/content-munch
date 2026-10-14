@@ -1,310 +1,304 @@
-// API helper for Content Munch Studio
+// Pure Frontend API Layer for Content Munch Studio
+// Operates 100% in the browser using localStorage and local calculation services.
+// No network requests or backend servers are used.
 
-const API_BASE = '/api';
+import {
+  getStoredSettings,
+  saveStoredSettings,
+  getStoredOperatingHours,
+  saveStoredOperatingHours,
+  getStoredServices,
+  saveStoredServices,
+  getStoredAddons,
+  saveStoredAddons,
+  getStoredStaff,
+  saveStoredStaff,
+  getStoredBlockedDates,
+  saveStoredBlockedDates,
+  getStoredAuditLogs,
+  appendStoredAuditLog,
+  getStoredBookings,
+  getStoredAdminSession,
+  saveStoredAdminSession,
+  resetAllLocalData
+} from '../services/storageService.js';
 
-/**
- * Handle fetch response with error unwrapping
- */
-async function handleResponse(res) {
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const errorMsg = data.message || data.error || `Request failed with status ${res.status}`;
-    const error = new Error(errorMsg);
-    error.status = res.status;
-    error.data = data;
-    throw error;
-  }
-  return data;
-}
+import { calculateBookingPrice } from '../services/pricingEngine.js';
+import { getAvailableSlotsForDate } from '../services/availabilityEngine.js';
+import {
+  createFrontendBooking,
+  lookupFrontendBooking,
+  rescheduleFrontendBooking,
+  updateFrontendBookingStatus,
+  assignStaffToBooking,
+  getDashboardMetrics,
+  getFilteredBookings,
+  getDerivedCustomers,
+  getReportsData
+} from '../services/bookingService.js';
 
-/**
- * Get stored admin token
- */
+// =========================================================================
+// AUTH / DEMO SESSION (No real credentials, strictly local demo)
+// =========================================================================
+
 export function getAdminToken() {
-  return localStorage.getItem('cm_admin_token') || '';
+  const session = getStoredAdminSession();
+  return session ? 'local-demo-token' : '';
 }
 
-/**
- * Set admin token
- */
 export function setAdminToken(token) {
   if (token) {
-    localStorage.setItem('cm_admin_token', token);
+    saveStoredAdminSession({
+      name: 'Studio Director',
+      email: 'admin@contentmunch.com',
+      role: 'owner'
+    });
   } else {
-    localStorage.removeItem('cm_admin_token');
+    saveStoredAdminSession(null);
   }
 }
 
-/**
- * Admin auth headers
- */
-function authHeaders() {
-  const token = getAdminToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+export async function adminLogin(email = 'admin@contentmunch.com', password = '') {
+  // Pure local demo login without real server credentials
+  const demoUser = {
+    name: email.split('@')[0] ? email.split('@')[0].replace('.', ' ').toUpperCase() : 'Studio Director',
+    email: email || 'admin@contentmunch.com',
+    role: 'owner'
   };
-}
-
-// =========================================================================
-// PUBLIC API
-// =========================================================================
-
-export async function fetchStudioConfig() {
-  const res = await fetch(`${API_BASE}/public/config`);
-  return handleResponse(res);
-}
-
-export async function fetchAvailability(date, duration = 1, serviceId = null) {
-  const params = new URLSearchParams({ date, duration: String(duration) });
-  if (serviceId) params.append('serviceId', String(serviceId));
-  const res = await fetch(`${API_BASE}/availability?${params.toString()}`);
-  return handleResponse(res);
-}
-
-export async function calculateQuote(serviceId, durationHours, addonIds = []) {
-  const res = await fetch(`${API_BASE}/public/quote`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serviceId, durationHours, addonIds })
-  });
-  return handleResponse(res);
-}
-
-export async function createBooking(payload) {
-  const res = await fetch(`${API_BASE}/bookings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(res);
-}
-
-export async function lookupBooking(reference) {
-  const res = await fetch(`${API_BASE}/bookings/lookup/${encodeURIComponent(reference)}`);
-  return handleResponse(res);
-}
-
-// =========================================================================
-// ADMIN API
-// =========================================================================
-
-export async function adminLogin(email, password) {
-  const res = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  const data = await handleResponse(res);
-  if (data.token) {
-    setAdminToken(data.token);
-  }
-  return data;
+  saveStoredAdminSession(demoUser);
+  appendStoredAuditLog('demo_admin_login', { email: demoUser.email });
+  return { user: demoUser, token: 'local-demo-token' };
 }
 
 export async function adminGetMe() {
-  const res = await fetch(`${API_BASE}/auth/me`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  const session = getStoredAdminSession();
+  if (!session) {
+    throw new Error('No active local admin session.');
+  }
+  return { user: session };
 }
 
+// =========================================================================
+// PUBLIC CLIENT API
+// =========================================================================
+
+export async function fetchStudioConfig() {
+  const settingsList = getStoredSettings();
+  const settingsObj = {};
+  for (const s of settingsList) {
+    settingsObj[s.key] = s.value;
+  }
+
+  return {
+    services: getStoredServices(),
+    addons: getStoredAddons(),
+    settings: settingsObj,
+    operatingHours: getStoredOperatingHours()
+  };
+}
+
+export async function fetchAvailability(date, duration = 1, serviceId = null) {
+  return getAvailableSlotsForDate(date, Number(duration) || 1, 1);
+}
+
+export async function calculateQuote(serviceId, durationHours, addonIds = []) {
+  return calculateBookingPrice(serviceId, durationHours, addonIds);
+}
+
+export async function createBooking(payload) {
+  return createFrontendBooking(payload);
+}
+
+export async function lookupBooking(reference) {
+  return lookupFrontendBooking(reference);
+}
+
+// =========================================================================
+// ADMIN PORTAL API (Pure local state & localStorage)
+// =========================================================================
+
 export async function adminGetMetrics() {
-  const res = await fetch(`${API_BASE}/admin/metrics`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getDashboardMetrics();
 }
 
 export async function adminGetBookings(filters = {}) {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(filters)) {
-    if (v !== undefined && v !== null && v !== '') {
-      params.append(k, String(v));
-    }
-  }
-  const res = await fetch(`${API_BASE}/admin/bookings?${params.toString()}`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getFilteredBookings(filters);
 }
 
 export async function adminUpdateBookingStatus(id, updateData) {
-  const res = await fetch(`${API_BASE}/admin/bookings/${id}/status`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify(updateData)
-  });
-  return handleResponse(res);
+  return updateFrontendBookingStatus(id, updateData.status, updateData.reason || '');
 }
 
 export async function adminRescheduleBooking(id, rescheduleData) {
-  const res = await fetch(`${API_BASE}/admin/bookings/${id}/reschedule`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(rescheduleData)
-  });
-  return handleResponse(res);
+  return rescheduleFrontendBooking(id, rescheduleData.newDate, rescheduleData.newStartTime);
 }
 
 export async function adminAssignStaff(id, staffId) {
-  const res = await fetch(`${API_BASE}/admin/bookings/${id}/assign`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ staffId })
-  });
-  return handleResponse(res);
+  return assignStaffToBooking(id, staffId);
 }
 
 export async function adminCreateManualBooking(payload) {
-  const res = await fetch(`${API_BASE}/admin/bookings/manual`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(res);
+  return createFrontendBooking(payload);
 }
 
 export async function adminGetCalendarEvents(start, end) {
-  const params = new URLSearchParams();
-  if (start) params.append('start', start);
-  if (end) params.append('end', end);
-  const res = await fetch(`${API_BASE}/admin/calendar-events?${params.toString()}`, {
-    headers: authHeaders()
+  const allBookings = getStoredBookings();
+  const blockedDates = getStoredBlockedDates();
+
+  const filtered = allBookings.filter(b => {
+    if (start && b.start_time < `${start}T00:00:00+05:30`) return false;
+    if (end && b.start_time > `${end}T23:59:59+05:30`) return false;
+    return true;
   });
-  return handleResponse(res);
+
+  return {
+    bookings: filtered,
+    blockedDates
+  };
 }
 
 export async function adminGetOperatingHours() {
-  const res = await fetch(`${API_BASE}/admin/operating-hours`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredOperatingHours();
 }
 
 export async function adminUpdateOperatingHours(hours) {
-  const res = await fetch(`${API_BASE}/admin/operating-hours`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify({ hours })
-  });
-  return handleResponse(res);
+  saveStoredOperatingHours(hours);
+  appendStoredAuditLog('update_operating_hours', { count: hours.length });
+  return { success: true };
 }
 
 export async function adminGetBlockedDates() {
-  const res = await fetch(`${API_BASE}/admin/blocked-dates`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredBlockedDates();
 }
 
 export async function adminAddBlockedDate(blockData) {
-  const res = await fetch(`${API_BASE}/admin/blocked-dates`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(blockData)
-  });
-  return handleResponse(res);
+  const list = getStoredBlockedDates();
+  const newBlock = {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    start_time: blockData.startTime,
+    end_time: blockData.endTime,
+    reason: blockData.reason,
+    created_by: 'admin',
+    created_at: new Date().toISOString()
+  };
+  list.unshift(newBlock);
+  saveStoredBlockedDates(list);
+  appendStoredAuditLog('add_blocked_date', newBlock);
+  return { success: true, blockedDate: newBlock };
 }
 
 export async function adminDeleteBlockedDate(id) {
-  const res = await fetch(`${API_BASE}/admin/blocked-dates/${id}`, {
-    method: 'DELETE',
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  let list = getStoredBlockedDates();
+  list = list.filter(b => Number(b.id) !== Number(id));
+  saveStoredBlockedDates(list);
+  appendStoredAuditLog('delete_blocked_date', { id });
+  return { success: true };
 }
 
 export async function adminGetStaff() {
-  const res = await fetch(`${API_BASE}/admin/staff`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredStaff();
 }
 
 export async function adminSaveStaff(staffData, id = null) {
-  const url = id ? `${API_BASE}/admin/staff/${id}` : `${API_BASE}/admin/staff`;
-  const method = id ? 'PUT' : 'POST';
-  const res = await fetch(url, {
-    method,
-    headers: authHeaders(),
-    body: JSON.stringify(staffData)
-  });
-  return handleResponse(res);
+  const staffList = getStoredStaff();
+  if (id) {
+    const idx = staffList.findIndex(s => Number(s.id) === Number(id));
+    if (idx !== -1) {
+      staffList[idx] = { ...staffList[idx], ...staffData };
+    }
+  } else {
+    const newStaff = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      ...staffData,
+      is_active: 1,
+      created_at: new Date().toISOString()
+    };
+    staffList.push(newStaff);
+  }
+  saveStoredStaff(staffList);
+  appendStoredAuditLog('save_staff', { id, name: staffData.name });
+  return { success: true };
+}
+
+export async function adminDeleteStaff(id) {
+  let staffList = getStoredStaff();
+  staffList = staffList.filter(s => Number(s.id) !== Number(id));
+  saveStoredStaff(staffList);
+  appendStoredAuditLog('delete_staff', { id });
+  return { success: true };
 }
 
 export async function adminGetCustomers(search = '') {
-  const res = await fetch(`${API_BASE}/admin/customers?search=${encodeURIComponent(search)}`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getDerivedCustomers(search);
 }
 
 export async function adminGetServices() {
-  const res = await fetch(`${API_BASE}/admin/services`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredServices();
 }
 
 export async function adminSaveService(serviceData, id = null) {
-  const url = id ? `${API_BASE}/admin/services/${id}` : `${API_BASE}/admin/services`;
-  const method = id ? 'PUT' : 'POST';
-  const res = await fetch(url, {
-    method,
-    headers: authHeaders(),
-    body: JSON.stringify(serviceData)
-  });
-  return handleResponse(res);
+  const services = getStoredServices();
+  if (id) {
+    const idx = services.findIndex(s => Number(s.id) === Number(id));
+    if (idx !== -1) {
+      services[idx] = { ...services[idx], ...serviceData };
+    }
+  } else {
+    const newSvc = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      slug: serviceData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      sort_order: services.length + 1,
+      ...serviceData
+    };
+    services.push(newSvc);
+  }
+  saveStoredServices(services);
+  appendStoredAuditLog('save_service', { id, name: serviceData.name });
+  return { success: true };
 }
 
 export async function adminGetAddons() {
-  const res = await fetch(`${API_BASE}/admin/addons`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredAddons();
 }
 
 export async function adminSaveAddon(addonData, id = null) {
-  const url = id ? `${API_BASE}/admin/addons/${id}` : `${API_BASE}/admin/addons`;
-  const method = id ? 'PUT' : 'POST';
-  const res = await fetch(url, {
-    method,
-    headers: authHeaders(),
-    body: JSON.stringify(addonData)
-  });
-  return handleResponse(res);
+  const addons = getStoredAddons();
+  if (id) {
+    const idx = addons.findIndex(a => Number(a.id) === Number(id));
+    if (idx !== -1) {
+      addons[idx] = { ...addons[idx], ...addonData };
+    }
+  } else {
+    const newAddon = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      ...addonData
+    };
+    addons.push(newAddon);
+  }
+  saveStoredAddons(addons);
+  appendStoredAuditLog('save_addon', { id, name: addonData.name });
+  return { success: true };
 }
 
 export async function adminGetSettings() {
-  const res = await fetch(`${API_BASE}/admin/settings`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredSettings();
 }
 
 export async function adminUpdateSettings(settingsList) {
-  const res = await fetch(`${API_BASE}/admin/settings`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify({ settings: settingsList })
-  });
-  return handleResponse(res);
+  saveStoredSettings(settingsList);
+  appendStoredAuditLog('update_settings', { count: settingsList.length });
+  return { success: true };
 }
 
 export async function adminGetAuditLogs(limit = 50) {
-  const res = await fetch(`${API_BASE}/admin/audit-logs?limit=${limit}`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getStoredAuditLogs().slice(0, limit);
 }
 
 export async function adminGetReports(startDate = '', endDate = '') {
-  const params = new URLSearchParams();
-  if (startDate) params.append('startDate', startDate);
-  if (endDate) params.append('endDate', endDate);
-  const res = await fetch(`${API_BASE}/admin/reports?${params.toString()}`, {
-    headers: authHeaders()
-  });
-  return handleResponse(res);
+  return getReportsData(startDate, endDate);
+}
+
+export async function resetLocalDemoData() {
+  resetAllLocalData();
+  return { success: true };
 }

@@ -1,14 +1,43 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { db, initDatabase } from '../server/db.js';
-import { calculateBookingPrice } from '../server/services/pricingEngine.js';
-import { getAvailableSlotsForDate, createKolkataISO } from '../server/services/availabilityEngine.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { calculateBookingPrice } from '../src/services/pricingEngine.js';
+import { getAvailableSlotsForDate, createKolkataISO } from '../src/services/availabilityEngine.js';
+import { 
+  createFrontendBooking, 
+  updateFrontendBookingStatus, 
+  rescheduleFrontendBooking,
+  lookupFrontendBooking,
+  getDashboardMetrics,
+  getDerivedCustomers
+} from '../src/services/bookingService.js';
+import { 
+  resetAllLocalData, 
+  getStoredBookings, 
+  getStoredStaff, 
+  getStoredBlockedDates,
+  saveStoredBlockedDates
+} from '../src/services/storageService.js';
 
-describe('Content Munch Studio - Core Booking & Engine Tests', () => {
-  beforeAll(() => {
-    initDatabase();
+describe('Content Munch Studio - 100% Frontend Booking & Scheduling Engine Tests', () => {
+  beforeEach(() => {
+    resetAllLocalData();
   });
 
-  describe('1. Pricing Engine & Authoritative Calculations', () => {
+  describe('1. Initial State Requirements', () => {
+    it('starts with completely clean and empty collections', () => {
+      expect(getStoredBookings()).toEqual([]);
+      expect(getStoredStaff()).toEqual([]);
+      expect(getStoredBlockedDates()).toEqual([]);
+      expect(getDerivedCustomers()).toEqual([]);
+
+      const metrics = getDashboardMetrics();
+      expect(metrics.counts.confirmed).toBe(0);
+      expect(metrics.recordedRevenue).toBe(0);
+      expect(metrics.totalOccupiedHours).toBe(0);
+      expect(metrics.recentBookings).toEqual([]);
+    });
+  });
+
+  describe('2. Pricing Engine & Authoritative Calculations', () => {
     it('calculates base studio rental price accurately', () => {
       // Content Creator Studio Rental (ID 1, base rate 1499, min duration 1h)
       const quote = calculateBookingPrice(1, 1, []);
@@ -41,7 +70,7 @@ describe('Content Munch Studio - Core Booking & Engine Tests', () => {
     });
   });
 
-  describe('2. Timezone & Slot Availability Engine', () => {
+  describe('3. Timezone & Slot Availability Engine', () => {
     it('creates accurate Asia/Kolkata ISO strings', () => {
       const iso = createKolkataISO('2026-10-20', '10:00');
       expect(iso).toBe('2026-10-20T10:00:00+05:30');
@@ -52,7 +81,6 @@ describe('Content Munch Studio - Core Booking & Engine Tests', () => {
       const availability = getAvailableSlotsForDate('2026-10-25', 1.0, 1);
       expect(availability.isOpen).toBe(true);
       expect(availability.slots.length).toBeGreaterThan(0);
-      // First slot starts at or after open_time
       expect(availability.slots[0].startTime >= availability.openTime).toBe(true);
     });
 
@@ -69,118 +97,176 @@ describe('Content Munch Studio - Core Booking & Engine Tests', () => {
     });
   });
 
-  describe('3. Concurrency & Conflict Prevention', () => {
-    it('prevents overlapping bookings on the same resource using atomic transaction', () => {
-      const testDate = '2026-11-15';
-      const startISO = `${testDate}T14:00:00+05:30`;
-      const endISO = `${testDate}T16:00:00+05:30`;
-
-      // Clean test slot
-      db.prepare("DELETE FROM bookings WHERE booking_reference LIKE 'TEST-%'").run();
-
-      // 1. Insert confirmed booking
-      db.prepare(`
-        INSERT INTO bookings (
-          booking_reference, customer_id, customer_name, customer_email, customer_phone,
-          service_id, service_name, resource_id, start_time, end_time, duration_hours,
-          selected_addons, base_price, addons_price, tax_amount, total_price,
-          booking_status, payment_status, created_at, updated_at
-        ) VALUES (
-          'TEST-REF-001', 1, 'First Creator', 'creator1@test.com', '+919999999991',
-          1, 'Studio Rental', 1, ?, ?, 2.0,
-          '[]', 2998, 0, 540, 3538,
-          'confirmed', 'unpaid', datetime('now'), datetime('now')
-        )
-      `).run(startISO, endISO);
-
-      // 2. Attempt simultaneous conflicting booking (overlapping 15:00 - 17:00)
-      const conflictStart = `${testDate}T15:00:00+05:30`;
-      const conflictEnd = `${testDate}T17:00:00+05:30`;
-
-      const bufferMinutes = 15;
-      const cStartMs = new Date(conflictStart).getTime() - (bufferMinutes * 60 * 1000);
-      const cEndMs = new Date(conflictEnd).getTime() + (bufferMinutes * 60 * 1000);
-
-      const dayEndISO = `${testDate}T23:59:59+05:30`;
-      const dayStartISO = `${testDate}T00:00:00+05:30`;
-
-      const activeBookings = db.prepare(`
-        SELECT id, booking_reference, start_time, end_time FROM bookings
-        WHERE resource_id = 1
-          AND booking_status IN ('confirmed', 'pending')
-          AND start_time <= ?
-          AND end_time >= ?
-      `).all(dayEndISO, dayStartISO) as any[];
-
-      const detectedConflicts = activeBookings.filter(b => {
-        const bStartMs = new Date(b.start_time).getTime();
-        const bEndMs = new Date(b.end_time).getTime();
-        return Math.max(cStartMs, bStartMs) < Math.min(cEndMs, bEndMs);
+  describe('4. In-Browser Booking Creation, Conflict Prevention & Lifecycle', () => {
+    it('creates a local booking and generates a unique reference', () => {
+      const result = createFrontendBooking({
+        serviceId: 1,
+        date: '2026-11-15',
+        startTime: '10:00',
+        durationHours: 2,
+        customerName: 'Ananya Sharma',
+        customerEmail: 'ananya@creator.com',
+        customerPhone: '+91 9840123456'
       });
 
-      // Conflict must be detected!
-      expect(detectedConflicts.length).toBeGreaterThan(0);
-      expect(detectedConflicts[0].booking_reference).toBe('TEST-REF-001');
+      expect(result.booking).toBeDefined();
+      expect(result.booking.bookingReference).toMatch(/^CM-20261115-[A-Z0-9]{4}$/);
+      expect(result.booking.duration_hours).toBe(2);
 
-      // Cleanup
-      db.prepare("DELETE FROM bookings WHERE booking_reference LIKE 'TEST-%'").run();
+      // Verify persistence in storage
+      const stored = getStoredBookings();
+      expect(stored.length).toBe(1);
+      expect(stored[0].booking_reference).toBe(result.booking.bookingReference);
+
+      // Verify derived customer
+      const customers = getDerivedCustomers();
+      expect(customers.length).toBe(1);
+      expect(customers[0].name).toBe('Ananya Sharma');
+      expect(customers[0].total_bookings).toBe(1);
+    });
+
+    it('rejects overlapping bookings on the same resource in the frontend', () => {
+      const testDate = '2026-11-15';
+      
+      // 1. First booking: 14:00 - 16:00
+      createFrontendBooking({
+        serviceId: 1,
+        date: testDate,
+        startTime: '14:00',
+        durationHours: 2,
+        customerName: 'First Creator',
+        customerEmail: 'first@test.com',
+        customerPhone: '+919999999991'
+      });
+
+      // 2. Conflicting booking: 15:00 - 17:00 (overlaps with 14:00 - 16:00 + 15m buffer)
+      expect(() => {
+        createFrontendBooking({
+          serviceId: 1,
+          date: testDate,
+          startTime: '15:00',
+          durationHours: 2,
+          customerName: 'Conflicting Creator',
+          customerEmail: 'second@test.com',
+          customerPhone: '+919999999992'
+        });
+      }).toThrow(/already booked/i);
     });
 
     it('releases occupied slots when a reservation is cancelled', () => {
       const testDate = '2026-11-20';
-      const startISO = `${testDate}T10:00:00+05:30`;
-      const endISO = `${testDate}T11:00:00+05:30`;
 
-      // Insert cancelled booking
-      db.prepare(`
-        INSERT INTO bookings (
-          booking_reference, customer_id, customer_name, customer_email, customer_phone,
-          service_id, service_name, resource_id, start_time, end_time, duration_hours,
-          selected_addons, base_price, addons_price, tax_amount, total_price,
-          booking_status, payment_status, created_at, updated_at
-        ) VALUES (
-          'TEST-CANCEL-001', 1, 'Cancelled User', 'user@test.com', '+919999999992',
-          1, 'Studio Rental', 1, ?, ?, 1.0,
-          '[]', 1499, 0, 270, 1769,
-          'cancelled', 'unpaid', datetime('now'), datetime('now')
-        )
-      `).run(startISO, endISO);
+      const res = createFrontendBooking({
+        serviceId: 1,
+        date: testDate,
+        startTime: '10:00',
+        durationHours: 1,
+        customerName: 'Test Creator',
+        customerEmail: 'test@creator.com',
+        customerPhone: '+919999999993'
+      });
 
-      // Verify availability considers slot FREE because status is 'cancelled'
-      const activeBookings = db.prepare(`
-        SELECT id FROM bookings
-        WHERE resource_id = 1
-          AND booking_status IN ('confirmed', 'pending')
-          AND start_time < ?
-          AND end_time > ?
-      `).all(endISO, startISO);
+      // Verify slot is unavailable
+      let availability = getAvailableSlotsForDate(testDate, 1.0, 1);
+      let slot10 = availability.slots.find(s => s.startTime === '10:00');
+      expect(slot10?.isAvailable).toBe(false);
 
-      expect(activeBookings.length).toBe(0);
+      // Cancel reservation
+      updateFrontendBookingStatus(res.booking.id, 'cancelled', 'User cancelled test');
 
-      // Cleanup
-      db.prepare("DELETE FROM bookings WHERE booking_reference LIKE 'TEST-%'").run();
+      // Verify slot is now available again
+      availability = getAvailableSlotsForDate(testDate, 1.0, 1);
+      slot10 = availability.slots.find(s => s.startTime === '10:00');
+      expect(slot10?.isAvailable).toBe(true);
+    });
+
+    it('validates conflicts when rescheduling a booking', () => {
+      const testDate = '2026-11-22';
+
+      // Booking A: 10:00 - 11:00
+      const bA = createFrontendBooking({
+        serviceId: 1,
+        date: testDate,
+        startTime: '10:00',
+        durationHours: 1,
+        customerName: 'Booking A',
+        customerEmail: 'a@test.com',
+        customerPhone: '+919999999994'
+      });
+
+      // Booking B: 14:00 - 15:00
+      const bB = createFrontendBooking({
+        serviceId: 1,
+        date: testDate,
+        startTime: '14:00',
+        durationHours: 1,
+        customerName: 'Booking B',
+        customerEmail: 'b@test.com',
+        customerPhone: '+919999999995'
+      });
+
+      // Reschedule Booking B to 10:00 -> should conflict with Booking A!
+      expect(() => {
+        rescheduleFrontendBooking(bB.booking.id, testDate, '10:00');
+      }).toThrow(/overlaps with an existing booking/i);
+
+      // Reschedule Booking B to 16:00 -> should succeed!
+      const updated = rescheduleFrontendBooking(bB.booking.id, testDate, '16:00');
+      expect(updated.booking.start_time).toContain('16:00');
+    });
+
+    it('allows looking up booking by reference code', () => {
+      const created = createFrontendBooking({
+        serviceId: 2,
+        date: '2026-11-25',
+        startTime: '11:00',
+        durationHours: 1,
+        customerName: 'Rohan Verma',
+        customerEmail: 'rohan@reels.com',
+        customerPhone: '+919840999888'
+      });
+
+      const found = lookupFrontendBooking(created.booking.bookingReference);
+      expect(found.booking.customer_name).toBe('Rohan Verma');
+      expect(found.booking.service_name).toBe('Instagram Reels & Short-Form Video');
     });
   });
 
-  describe('4. Maintenance & Blocked Slots', () => {
-    it('blocks bookings during studio maintenance periods', () => {
+  describe('5. Maintenance & Blocked Slots', () => {
+    it('blocks bookings during studio maintenance periods in the browser', () => {
       const blockStart = '2026-12-01T08:00:00+05:30';
       const blockEnd = '2026-12-01T14:00:00+05:30';
 
-      const ins = db.prepare(`
-        INSERT INTO blocked_dates (start_time, end_time, reason, created_by, created_at)
-        VALUES (?, ?, 'Annual Acoustic Panel Calibration', 'admin', datetime('now'))
-      `).run(blockStart, blockEnd);
+      saveStoredBlockedDates([
+        {
+          id: 101,
+          start_time: blockStart,
+          end_time: blockEnd,
+          reason: 'Annual Acoustic Panel Calibration',
+          created_by: 'admin',
+          created_at: new Date().toISOString()
+        }
+      ]);
 
       const availability = getAvailableSlotsForDate('2026-12-01', 1.0, 1);
       const morningSlot = availability.slots.find(s => s.startTime === '10:00');
-      
+
       expect(morningSlot).toBeDefined();
       expect(morningSlot?.isAvailable).toBe(false);
       expect(morningSlot?.unavailabilityReason).toContain('Annual Acoustic Panel Calibration');
 
-      // Cleanup
-      db.prepare('DELETE FROM blocked_dates WHERE id = ?').run(ins.lastInsertRowid);
+      // Attempting to book during maintenance throws error
+      expect(() => {
+        createFrontendBooking({
+          serviceId: 1,
+          date: '2026-12-01',
+          startTime: '10:00',
+          durationHours: 1,
+          customerName: 'Blocked User',
+          customerEmail: 'user@test.com',
+          customerPhone: '+919999999999'
+        });
+      }).toThrow(/closed for maintenance/i);
     });
   });
 });

@@ -193,7 +193,7 @@ export default function BookingEngine({
                 Reserve Content Munch Studio
               </h3>
               <p className="text-[11px] text-studio-muted">
-                Step {Math.min(currentStep, 7)} of 7 • Chennai Timezone (Asia/Kolkata)
+                Step {Math.min(currentStep, 7)} of 7 • Chennai Timezone (Asia/Kolkata) • Browser Local Simulation
               </p>
             </div>
           </div>
@@ -655,13 +655,13 @@ export default function BookingEngine({
 
               <div>
                 <span className="studio-badge bg-emerald-100 text-emerald-800 mb-2">
-                  Reservation Confirmed
+                  Simulation Confirmed Locally
                 </span>
                 <h4 className="text-2xl sm:text-3xl font-bold font-editorial text-studio-navy">
                   Your Studio Slot is Booked!
                 </h4>
                 <p className="text-xs sm:text-sm text-studio-muted max-w-md mx-auto mt-1">
-                  We look forward to hosting you at Content Munch Studio, Chennai.
+                  Saved directly to your browser's local storage. This is a frontend demo simulation.
                 </p>
               </div>
 
@@ -674,7 +674,7 @@ export default function BookingEngine({
                   </div>
                   <button
                     onClick={copyRefToClipboard}
-                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-studio-cream hover:bg-studio-cream-dark text-studio-charcoal border border-studio-border transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-studio-cream hover:bg-studio-cream-dark text-studio-charcoal border border-studio-border transition-colors cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     <span>{copiedRef ? 'Copied!' : 'Copy'}</span>
@@ -705,20 +705,20 @@ export default function BookingEngine({
                 </div>
               </div>
 
-              {/* Next Steps */}
+              {/* Notice & Next Steps */}
               <div className="max-w-md mx-auto text-xs text-studio-muted space-y-2 text-left bg-studio-cream/60 p-4 rounded-xl border border-studio-border/60">
-                <p className="font-bold text-studio-charcoal">What happens next?</p>
+                <p className="font-bold text-studio-charcoal">Browser Storage Notice</p>
                 <ul className="list-disc list-inside space-y-1 text-studio-charcoal/80">
-                  <li>Our studio coordinator will contact you via WhatsApp (+91 94896 80339) to confirm your backdrop & lighting requirements.</li>
-                  <li>Please arrive 10 minutes prior to your start time for complimentary gear staging.</li>
-                  <li>Payment can be completed at the studio reception or via UPI on arrival.</li>
+                  <li>This booking is stored in your current browser's localStorage and is not sent to an external server.</li>
+                  <li>You can look up this booking anytime using the reference code in the top bar.</li>
+                  <li>The slot is immediately reflected in the Admin Dashboard and calendar.</li>
                 </ul>
               </div>
 
               <div className="pt-2">
                 <button
                   onClick={onClose}
-                  className="bg-studio-navy hover:bg-studio-navy-light text-white px-8 py-3 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm"
+                  className="bg-studio-navy hover:bg-studio-navy-light text-white px-8 py-3 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
                 >
                   Done
                 </button>

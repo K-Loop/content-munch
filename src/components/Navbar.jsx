@@ -58,8 +58,12 @@ export default function Navbar({ onOpenBooking, onOpenAdmin, onOpenLookup }) {
           {/* GROUP 1 (Left): Brand Logo & Name */}
           <div className="xl:col-span-3 flex items-center">
             <a
-              href="#"
-              className="flex items-center gap-2.5 sm:gap-3 group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-studio-coral rounded-xl p-1 -m-1 transition-transform active:scale-95"
+              href="#studio"
+              onClick={(e) => {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="flex items-center gap-2.5 sm:gap-3 group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-studio-coral rounded-xl p-1 -m-1 transition-transform active:scale-95 cursor-pointer"
             >
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-studio-navy flex items-center justify-center p-1.5 shadow-xs shrink-0 transition-transform group-hover:scale-105">
                 <img
